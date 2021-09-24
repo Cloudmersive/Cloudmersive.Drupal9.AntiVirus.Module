@@ -1,0 +1,9 @@
+name: Cloudmersive Anti-Virus
+type: module
+description: 'Automatic scanning of file uploads using the Cloudmersive Anti-virus APIs.'
+package: Anti-virus
+# core: 8.x
+configure: cloudmersiveantivirus.admin_display
+
+# Information added by Drupal.org packaging script on 2017-01-25
+core_version_requirement: '^8.9 || ^9'

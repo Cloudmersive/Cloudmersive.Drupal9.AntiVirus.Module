@@ -1,0 +1,95 @@
+<?php
+
+/**
+ * @file
+ * Controls behaviour of anti-virus integration with CloudmersiveAntivirus.
+ */
+
+use Drupal\file\FileInterface;
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\cloudmersiveantivirus\Scanner;
+
+/**
+ * Implements hook_help().
+ */
+function cloudmersiveantivirus_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the cloudmersiveantivirus module.
+    case 'help.page.cloudmersiveantivirus':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<ul>';
+      $output .= '<li>' . t('This module integrates with the anti-virus scanner Cloudmersive Antivirus API.') . '</li>';
+      $output .= '<li>' . t('Uploaded files are forwarded to the Cloudmersive Antivirus service and scanned.') . '</li>';
+      $output .= '<li>' . t('Infected files are blocked in the validation routine, so they cannot be saved.') . '</li>';
+      $output .= '<li>' . t('Administrator&#39;s can configure scanning preferences via the administration configuration UI.') . '</li>';
+      $output .= '</ul>';
+      return $output;
+
+    default:
+  }
+}
+
+/**
+ * Implements hook_entity_create().
+ *
+ * Attach a scanner to all entities that implement Drupal\file\FileInterface.
+ */
+function cloudmersiveantivirus_entity_create($entity) {
+  if (is_a($entity, 'Drupal\file\FileInterface')) {
+    $entity->cloudmersiveantivirus_attemptScan = TRUE;
+  }
+}
+
+/**
+ * Implements hook_file_validate().
+ */
+function cloudmersiveantivirus_file_validate(FileInterface $file) {
+
+  $errors = [];
+
+  // This hook can be called on actions that do not justify anti-virus scanning
+  // (such as removing an existing file).
+  // The entity-action attaches a property
+  // "cloudmersiveantivirus_attemptScan" for actions
+  // where the file should be scanned.
+  if (empty($file->cloudmersiveantivirus_attemptScan)) {
+    return $errors;
+  }
+
+  $scanner = \Drupal::service('cloudmersiveantivirus');
+  if ($scanner->isEnabled() && $scanner->isScannable($file)) {
+
+    if ($scanner->isVerboseModeEnabled()) {
+      \Drupal::logger('Cloudmersive Antivirus')->debug('File %filename is scannable.', ['%filename' => $file->getFilename()]);
+    }
+
+    $result = $scanner->scan($file);
+
+    switch ($result) {
+      // File is infected.
+      case Scanner::FILE_IS_INFECTED:
+        $errors[] = t('A virus has been detected in the file. The file will be deleted.');
+        break;
+
+      // File couldn't be scanned (perhaps the
+      // CloudmersiveAntivirus service is unavailable).
+      case Scanner::FILE_IS_UNCHECKED:
+        // Check whether unscanned files are permitted.
+        if (!$scanner->allowUncheckedFiles()) {
+          $errors[] = t('The anti-virus scanner could not check the file, so the file cannot be uploaded. Contact the site administrator if this problem persists.');
+        }
+        break;
+    }
+  }
+  // In verbose mode, log files that were not checked.
+  elseif ($scanner->isVerboseModeEnabled()) {
+    $message = 'Uploaded file %filename was not checked, and was uploaded without checking.';
+    $replacements = [
+      '%filename' => $file->getFilename(),
+    ];
+    \Drupal::logger('Cloudmersive Antivirus')->info($message, $replacements);
+  }
+
+  return $errors;
+}

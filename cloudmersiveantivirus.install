@@ -1,0 +1,54 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the cloudmersiveantivirus module.
+ */
+
+use Drupal\cloudmersiveantivirus\Config;
+use Drupal\cloudmersiveantivirus\Scanner\DaemonTCPIP;
+use Drupal\cloudmersiveantivirus\Scanner\Executable;
+
+/**
+ * Implements hook_requirements().
+ */
+function cloudmersiveantivirus_requirements($phase) {
+  $requirements = [];
+  // Report Drupal version.
+  if ($phase == 'runtime') {
+    $config = new Config();
+
+    switch ($config->scanMode()) {
+      case Config::MODE_DAEMON:
+        $scanner = new DaemonTCPIP($config);
+        break;
+
+      case Config::MODE_EXECUTABLE:
+        $scanner = new Executable($config);
+        break;
+
+      case Config::MODE_UNIX_SOCKET:
+        $scanner = new DaemonUnixSocket($config);
+        break;
+    }
+
+    if ($version = $scanner->version()) {
+      $requirements['cloudmersiveantivirus'] = [
+        'title' => t('CloudmersiveAntivirus version'),
+        'value' => $scanner->version(),
+        'severity' => REQUIREMENT_INFO,
+      ];
+    }
+    else {
+      $requirements['cloudmersiveantivirus'] = [
+        'title' => t('CloudmersiveAntivirus version'),
+        'value' => t('Unable to connect to CloudmersiveAntivirus service.'),
+        'severity' => REQUIREMENT_ERROR,
+      ];
+    }
+  }
+
+  return $requirements;
+}
+
+// @todo how to port D7 config to D8?
